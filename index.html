@@ -94,14 +94,11 @@
     if (saved >= 1000) { totalMs = remainMs = saved; }
   } catch (e) {}
 
-  /* セグメント色: 左=オレンジ → 黄緑 → 緑 → 右=青 */
+  /* セグメント色（グラデーションなし）: 左=赤 → 黄緑 → 緑 → 右=青、各4分の1 */
   var segs = [];
+  var COLORS = ['#ff3b30', '#a8e61d', '#1fc84a', '#1e78ff'];
   function segColor(i) {
-    var t = i / (SEGS - 1);
-    if (t < 0.24) return 'hsl(28,100%,50%)';                     // オレンジ
-    if (t > 0.76) return 'hsl(212,100%,52%)';                    // 青
-    var u = (t - 0.24) / 0.52;                                   // 黄緑→緑
-    return 'hsl(' + (88 - u * 38) + ',85%,' + (50 - u * 6) + '%)';
+    return COLORS[Math.min(3, Math.floor(i / (SEGS / 4)))];
   }
   for (var i = 0; i < SEGS; i++) {
     var d = document.createElement('div');
