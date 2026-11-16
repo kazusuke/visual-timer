@@ -8,20 +8,22 @@
 <style>
   :root { --bg:#0d0f12; --fg:#e9f6ff; --sub:#8b93a1; --card:#1b2027; --accent:#3ddc97; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; margin: 0; }
+  html { height: 100%; margin: 0; }
   body {
+    margin: 0; min-height: 100%;
     background: var(--bg); color: var(--fg);
     font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; align-items: center;
     padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     user-select: none; -webkit-user-select: none;
   }
   body.flash { animation: flash .5s steps(1) infinite; }
   @keyframes flash { 0%{background:#c0392b} 50%{background:var(--bg)} }
-  main { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: clamp(16px, 4vh, 40px); }
+  /* margin:auto で縦中央。はみ出す場合は上下とも切れずスクロールできる */
+  main { width: 100%; max-width: 1000px; margin: auto 0; display: flex; flex-direction: column; gap: clamp(12px, 3.5vh, 40px); }
 
   .time {
-    font-size: clamp(64px, 20vw, 200px); font-weight: 700; text-align: center;
+    font-size: clamp(56px, min(20vw, 22vh), 200px); font-weight: 700; text-align: center;
     font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1;
     color: var(--fg); text-shadow: 0 0 18px rgba(120,200,255,.35);
   }
@@ -29,7 +31,7 @@
   /* セグメント式バー */
   .bar {
     display: flex; gap: clamp(2px, .6vw, 6px); width: 100%;
-    height: clamp(64px, 16vh, 150px); padding: clamp(6px, 1.2vw, 12px);
+    height: clamp(56px, 15vh, 150px); padding: clamp(6px, 1.2vw, 12px);
     background: #05070a; border: 3px solid #2a3038; border-radius: 14px;
   }
   .seg { flex: 1; border-radius: 2px; opacity: 1; transition: opacity .15s; }
