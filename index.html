@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<title>ビジュアルタイマー</title>
+<style>
+  :root { --bg:#0d0f12; --fg:#e9f6ff; --sub:#8b93a1; --card:#1b2027; --accent:#3ddc97; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    user-select: none; -webkit-user-select: none;
+  }
+  body.flash { animation: flash .5s steps(1) infinite; }
+  @keyframes flash { 0%{background:#c0392b} 50%{background:var(--bg)} }
+  main { width: 100%; max-width: 900px; display: flex; flex-direction: column; gap: clamp(16px, 4vh, 40px); }
+
+  .time {
+    font-size: clamp(64px, 20vw, 200px); font-weight: 700; text-align: center;
+    font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1;
+    color: var(--fg); text-shadow: 0 0 18px rgba(120,200,255,.35);
+  }
+
+  /* セグメント式バー */
+  .bar {
+    display: flex; gap: clamp(2px, .6vw, 6px); width: 100%;
+    height: clamp(64px, 16vh, 150px); padding: clamp(6px, 1.2vw, 12px);
+    background: #05070a; border: 3px solid #2a3038; border-radius: 14px;
+  }
+  .seg { flex: 1; border-radius: 2px; opacity: 1; transition: opacity .15s; }
+  .seg.off { opacity: .08; }
+
+  .presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  button {
+    font: inherit; color: var(--fg); background: var(--card); border: 2px solid transparent;
+    border-radius: 16px; padding: clamp(12px, 2.6vh, 22px) 8px; font-size: clamp(18px, 4.5vw, 30px); font-weight: 600; cursor: pointer;
+  }
+  button:active { transform: scale(.97); }
+  .presets button.sel { border-color: var(--accent); color: var(--accent); }
+
+  .custom { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; color: var(--sub); font-size: clamp(16px, 4vw, 24px); }
+  .custom input {
+    width: 4.2em; font: inherit; font-size: clamp(20px, 5vw, 30px); text-align: center; color: var(--fg);
+    background: var(--card); border: 2px solid #2a3038; border-radius: 12px; padding: 10px 6px; user-select: text; -webkit-user-select: text;
+  }
+  .custom input:focus { outline: none; border-color: var(--accent); }
+  .custom button { padding: 12px 20px; font-size: clamp(16px, 4vw, 24px); }
+  .custom button.sel { border-color: var(--accent); color: var(--accent); }
+
+  .ctrl { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+  #go { background: #3ddc97; color: #0b1a12; }
+  #go.run { background: #f5b942; color: #241a00; }
+  .hint { text-align: center; color: var(--sub); font-size: 14px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<main>
+  <div class="time" id="time">25:00</div>
+  <div class="bar" id="bar"></div>
+  <div class="presets" id="presets"></div>
+  <div class="custom" id="custom">
+    <input id="inMin" type="number" inputmode="numeric" min="0" max="999" placeholder="0" aria-label="分">
+    <span>分</span>
+    <input id="inSec" type="number" inputmode="numeric" min="0" max="59" placeholder="0" aria-label="秒">
+    <span>秒</span>
+    <button id="setCustom">設定</button>
+  </div>
+  <div class="ctrl">
+    <button id="go">スタート</button>
+    <button id="reset">リセット</button>
+  </div>
+  <div class="hint" id="hint"></div>
+</main>
+
+<script>
+(function () {
+  var PRESETS = [5, 10, 25, 60];
+  var SEGS = 24;
+  var $ = function (id) { return document.getElementById(id); };
+  var timeEl = $('time'), barEl = $('bar'), goEl = $('go'), resetEl = $('reset'), hintEl = $('hint'),
+      presetsEl = $('presets'), inMin = $('inMin'), inSec = $('inSec'), setCustomEl = $('setCustom');
+
+  var totalMs = 25 * 60000, remainMs = totalMs, endAt = 0, running = false, tick = null, wake = null;
+
+  try {
+    var saved = parseInt(localStorage.getItem('vt-ms'), 10);
+    if (saved >= 1000) { totalMs = remainMs = saved; }
+  } catch (e) {}
+
+  /* セグメント色: 左=オレンジ → 黄緑 → 緑 → 右=青 */
+  var segs = [];
+  function segColor(i) {
+    var t = i / (SEGS - 1);
+    if (t < 0.24) return 'hsl(28,100%,50%)';                     // オレンジ
+    if (t > 0.76) return 'hsl(212,100%,52%)';                    // 青
+    var u = (t - 0.24) / 0.52;                                   // 黄緑→緑
+    return 'hsl(' + (88 - u * 38) + ',85%,' + (50 - u * 6) + '%)';
+  }
+  for (var i = 0; i < SEGS; i++) {
+    var d = document.createElement('div');
+    d.className = 'seg'; d.style.background = segColor(i);
+    barEl.appendChild(d); segs.push(d);
+  }
+
+  PRESETS.forEach(function (m) {
+    var b = document.createElement('button');
+    b.textContent = m + '分'; b.dataset.ms = m * 60000;
+    b.onclick = function () { setTotal(m * 60000); };
+    presetsEl.appendChild(b);
+  });
+
+  function fmt(ms) {
+    var s = Math.ceil(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return h > 0 ? h + ':' + p(m) + ':' + p(r) : p(m) + ':' + p(r);
+  }
+
+  function render() {
+    var ratio = totalMs ? remainMs / totalMs : 0;
+    timeEl.textContent = fmt(remainMs);
+    var exact = ratio * SEGS;                                    // 右端から消える
+    for (var i = 0; i < SEGS; i++) {
+      segs[i].classList.toggle('off', i >= Math.ceil(exact - 1e-9));
+    }
+    document.title = (running ? fmt(remainMs) + ' ' : '') + 'ビジュアルタイマー';
+    var isPreset = false;
+    Array.prototype.forEach.call(presetsEl.children, function (b) {
+      var on = +b.dataset.ms === totalMs; b.classList.toggle('sel', on); if (on) isPreset = true;
+    });
+    setCustomEl.classList.toggle('sel', !isPreset);
+    goEl.textContent = running ? '一時停止' : (remainMs < totalMs && remainMs > 0 ? '再開' : 'スタート');
+    goEl.classList.toggle('run', running);
+  }
+
+  function setTotal(ms) {
+    stop(); stopAlert();
+    totalMs = remainMs = ms;
+    try { localStorage.setItem('vt-ms', ms); } catch (e) {}
+    hintEl.textContent = '';
+    render();
+  }
+
+  setCustomEl.onclick = function () {
+    var m = parseInt(inMin.value, 10) || 0, s = parseInt(inSec.value, 10) || 0;
+    var ms = (m * 60 + s) * 1000;
+    if (ms < 1000) { hintEl.textContent = '1秒以上の時間を入力してください'; return; }
+    if (ms > 999 * 60000 + 59000) { hintEl.textContent = '999分59秒までです'; return; }
+    setTotal(ms);
+    inMin.blur(); inSec.blur();
+  };
+  [inMin, inSec].forEach(function (el) {
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter') setCustomEl.click(); });
+  });
+
+  function lockScreen() {
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function (l) { wake = l; }, function () {}); } catch (e) {}
+  }
+  function unlockScreen() { try { if (wake) { wake.release(); wake = null; } } catch (e) {} }
+
+  function start() {
+    stopAlert();
+    if (remainMs <= 0) remainMs = totalMs;
+    endAt = Date.now() + remainMs; running = true;
+    tick = setInterval(update, 100);
+    lockScreen(); render();
+  }
+  function stop() { running = false; clearInterval(tick); unlockScreen(); }
+
+  function update() {
+    remainMs = Math.max(0, endAt - Date.now());
+    if (remainMs <= 0) { stop(); finish(); }
+    render();
+  }
+
+  var vibLoop = null;
+  function buzz() { try { if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]); } catch (e) {} }
+  function finish() {
+    document.body.classList.add('flash');
+    hintEl.textContent = '時間です。リセットまたは時間の選択で停止';
+    buzz(); vibLoop = setInterval(buzz, 3000);
+  }
+  function stopAlert() {
+    document.body.classList.remove('flash');
+    clearInterval(vibLoop); vibLoop = null;
+    try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) {}
+  }
+
+  goEl.onclick = function () {
+    if (running) { stop(); render(); } else { start(); }
+    hintEl.textContent = '';
+  };
+  resetEl.onclick = function () { stop(); stopAlert(); remainMs = totalMs; hintEl.textContent = ''; render(); };
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && running) { lockScreen(); update(); }
+  });
+
+  if (!navigator.vibrate) hintEl.textContent = 'この端末・ブラウザはバイブ非対応です（終了時は画面が点滅します）';
+  render();
+})();
+</script>
+</body>
+</html>
